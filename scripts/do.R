@@ -15,11 +15,14 @@ library(lubridate)
 #### load functions ####
 source("Y:/LEAP/23. LEAP OA Data Quality/scripts/functions.R")
 
-#### load.R: load data ####
-source("scripts/load.R")
+#### load1.R: load biobank export data ####
+source("scripts/load1.R")
 
-#### merge.R: merge together appropriate datasets ####
+#### merge.R: merge together biobank datasets ####
 source("scripts/merge.R")
 
-#### clean.R: clean dataset, subset and derive variables ####
+#### load2.R: load biobank summary data and DADOS data ####
+source("scripts/load2.R")
+
+#### clean.R: clean data, subset and derive variables ####
 source("scripts/clean.R")
