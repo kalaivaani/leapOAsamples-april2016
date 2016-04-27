@@ -24,27 +24,27 @@ TKR_SF <- subset(TKR_SF, TKR_SF$StorageContainer...Name != "")
 THR_SF <- subset(THR_SF, THR_SF$StorageContainer...Name != "")
 
 ### add timepoint for SDF
-SDF_PL$CollectionProtocolEvent...Collection.Point.Label <- ifelse(grepl("^Pre",SDF_PL$Specimen...Label), "Pre-Surgery",
-                                                  ifelse(grepl("^6wk", SDF_PL$Specimen...Label), "6 week Follow-up",
-                                                         ifelse(grepl("^3m", SDF_PL$Specimen...Label), "3 month Follow-up",
-                                                                ifelse(grepl("^6m", SDF_PL$Specimen...Label), "6 month Follow-up",
-                                                                       ifelse(grepl("^1y", SDF_PL$Specimen...Label), "1 year Follow-up", NA)))))
+# SDF_PL$CollectionProtocolEvent...Collection.Point.Label <- ifelse(grepl("^Pre",SDF_PL$Specimen...Label), "Pre-Surgery",
+#                                                   ifelse(grepl("^6wk", SDF_PL$Specimen...Label), "6 week Follow-up",
+#                                                          ifelse(grepl("^3m", SDF_PL$Specimen...Label), "3 month Follow-up",
+#                                                                 ifelse(grepl("^6m", SDF_PL$Specimen...Label), "6 month Follow-up",
+#                                                                        ifelse(grepl("^1y", SDF_PL$Specimen...Label), "1 year Follow-up", NA)))))
 
 # add missing timepoints
-SDF_PL$CollectionProtocolEvent...Collection.Point.Label[grep("^164_SDF_Pl", SDF_PL$Specimen...Label)] <- "Pre-Surgery"
-SDF_PL$CollectionProtocolEvent...Collection.Point.Label[grep("^57_SDF_Pl", SDF_PL$Specimen...Label)] <- "Pre-Surgery"
+# SDF_PL$CollectionProtocolEvent...Collection.Point.Label[grep("^164_SDF_Pl", SDF_PL$Specimen...Label)] <- "Pre-Surgery"
+# SDF_PL$CollectionProtocolEvent...Collection.Point.Label[grep("^57_SDF_Pl", SDF_PL$Specimen...Label)] <- "Pre-Surgery"
 
 
 ### merge SAP quality/quantity and CaTissue reports together
 TKR_PL <- merge(TKR_PL, TKR_PL_Q[,c("Specimen.Label", "Quality")], by.x="Specimen...Label", by.y="Specimen.Label", all.x=T, all.y=F)
 THR_PL <- merge(THR_PL, THR_PL_Q[,c("Specimen.Label", "Quality")], by.x="Specimen...Label", by.y="Specimen.Label", all.x=T, all.y=F)
-SDF_PL <- merge(SDF_PL, SDF_PL_Q[,c("Specimen.Label", "Quality")], by.x="Specimen...Label", by.y="Specimen.Label", all.x=T, all.y=F)
+# SDF_PL <- merge(SDF_PL, SDF_PL_Q[,c("Specimen.Label", "Quality")], by.x="Specimen...Label", by.y="Specimen.Label", all.x=T, all.y=F)
 
 TKR_SF <- merge(TKR_SF, TKR_SF_QUANTITY[,c("Specimen.Label", "Initial.Quantity")], by.x="Specimen...Label", by.y="Specimen.Label", all.x=T, all.y=F)
 THR_SF <- merge(THR_SF, THR_SF_QUANTITY[,c("Specimen.Label", "Initial.Quantity")], by.x="Specimen...Label", by.y="Specimen.Label", all.x=T, all.y=F)
 
-### combine plasma and SF datasets
-PL_data <- rbind.fill(TKR_PL, THR_PL, SDF_PL)
+### combine Hip/Knee plasma and SF datasets
+PL_data <- rbind.fill(TKR_PL, THR_PL)
 SF_data <- rbind.fill(TKR_SF, THR_SF)
 
 ### extract variables from plasma datasets
@@ -63,10 +63,30 @@ PL <- data.frame(MRN = PL_data$ParticipantMedicalIdentifier...Medical.Record.Num
                  Comment = PL_data$Specimen...Comment,
                  ThawDate = PL_data$ThawEventParameters...Timestamp,
                  ThawComment = PL_data$ThawEventParameters...Comment,
+                 Thaw = ifelse(is.na(PL_data$ThawEventParameters...Timestamp) | PL_data$ThawEventParameters...Timestamp == "", 0, 1),
                  Biohazard = PL_data$Biohazard...Name,
                  stringsAsFactors=FALSE
 )
 
+# extract variables from spine plasma dataset
+PL_spine <- data.frame(MRN=SDF_PL$Medical.Record.Number,
+                       Clinical.Status = SDF_PL$Clinical.Status,
+                       Procedure = SDF_PL$Procedure,
+                       Joint = "Spine",
+                       Timepoint = SDF_PL$Collection.Point,
+                       Collection.Date = ymd(do.call(rbind,strsplit(SDF_PL$Collection.Date, " "))[,1]),
+                       Specimen.Label = SDF_PL$Specimen.Label,
+                       Quality = SDF_PL$Quality,
+                       Available = SDF_PL$Available.Quantity,
+                       Initial = SDF_PL$Initial.Quantity,
+                       Location = SDF_PL$Storage.Location,
+                       Comment = SDF_PL$Specimen.Comments,
+                       Thaw = ifelse(SDF_PL$Available.Quantity < SDF_PL$Initial.Quantity, 1, 0),
+                       Biohazard = SDF_PL$Biohazard,
+                       stringsAsFactors=FALSE )
+
+# bind with hip/knee samples
+PL <- rbind.fill(PL, PL_spine)
 
 ### extract variables from SF datasets
 
@@ -85,7 +105,7 @@ SF <- data.frame(MRN = SF_data$ParticipantMedicalIdentifier...Medical.Record.Num
                  Biohazard = SF_data$Biohazard...Name,
                  stringsAsFactors=FALSE
                  )
-write.csv(SF, file="processed_data/SF.csv", row.names=F, na="")
+
 
 ### get study IDs
 split_PL_IDs <- do.call(rbind, strsplit(PL$Specimen.Label, "[_]"))
@@ -109,7 +129,45 @@ SF <- cbind(ID=SF_IDs, SF)
 PL[PL==""] <- NA
 SF[SF==""] <- NA
 
-## save data
+
+###################### check MRNs ########################
+# plasma
+PlasmaMRNcheck <- ddply(PL, .(ID, Joint), summarize,
+                        nMRNs = length(levels(as.factor(MRN))),
+                        MRNs = paste(levels(as.factor(MRN)), collapse="; "))
+write.csv(subset(PlasmaMRNcheck, PlasmaMRNcheck$nMRNs>1), file="processed_data/mislabelledPlasma.csv", row.names=F, na="")
+
+# SF
+SFMRNcheck <- ddply(SF, .(ID, Joint), summarize,
+                    nMRNs = length(levels(as.factor(MRN))),
+                    MRNs = paste(levels(as.factor(MRN)), collapse="; "))
+write.csv(subset(SFMRNcheck, SFMRNcheck$nMRNs>1), file="processed_data/mislabelledSF.csv", row.names=F, na="")
+
+############ fix mislabelled plasma samples ##############
+# 105 spine: 3097163 --> 112 spine
+PL$ID[PL$ID==105 & PL$Joint=="Spine" & PL$MRN == 3097163] <- 112
+
+# 188 spine: 3366137 --> no ID
+PL$ID[PL$ID==188 & PL$Joint=="Spine" & PL$MRN == 3366137] <- NA
+
+# 56 spine: 4204012 --> no ID
+PL$ID[PL$ID==56 & PL$Joint=="Spine" & PL$MRN == 4204012] <- NA
+
+# 563 knee: 2327357 --> change joint to 'Hip'
+PL$Joint[PL$ID==563 & PL$Joint=="Knee" & PL$MRN==2327357] <- "Hip"
+
+# 57 spine: 2793324 --> no ID
+PL$ID[PL$ID==57 & PL$Joint=="Spine" & PL$MRN == 2793324] <- NA
+
+# 59 spine: 4034872 --> no ID
+PL$ID[PL$ID==59 & PL$Joint=="Spine" & PL$MRN == 4034872] <- NA
+
+# 97 hip: 3547478 --> change joint to 'Spine'
+PL$Joint[PL$ID==97 & PL$Joint=="Hip" & PL$MRN==3547478] <- "Spine"
+
+
+
+################# save data #########################
 save(PL, file="processed_data/PL.Rdata")
 save(SF, file="processed_data/SF.Rdata")
 write.csv(PL, file="processed_data/PL.csv", row.names=FALSE, na="")

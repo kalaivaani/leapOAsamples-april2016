@@ -57,6 +57,40 @@ OA_indicators <- subset(OA_indicators, OA_indicators$Status %in% c("ONGOING", "W
 # remove rows with no survey data / no followups
 OA_indicators <- subset(OA_indicators, !is.na(OA_indicators$BL) & OA_indicators$followups != 0)
 
+##### check biobank/DADOS MRNs ###########
+PL$ID <- as.character(PL$ID)
+PlasmaMRNs <- merge(LEAPOA_master[,c("Subject.ID","Joint","MRN")], PL[,c("ID", "Joint", "MRN", "Timepoint", "Specimen.Label")],
+              by.x=c("Subject.ID", "Joint"), by.y=c("ID", "Joint"), all.x=F, all.y=F)
+names(PlasmaMRNs) <- c("ID", "Joint", "DADOS.MRN", "CaTissue.MRN", "Timepoint", "Label")
+  
+SF$ID <- as.character(SF$ID)
+SFMRNs <- merge(LEAPOA_master[,c("Subject.ID","Joint","MRN")], SF[,c("ID", "Joint", "MRN", "Specimen.Label")],
+                    by.x=c("Subject.ID", "Joint"), by.y=c("ID", "Joint"), all.x=F, all.y=F)
+names(SFMRNs) <- c("ID", "Joint", "DADOS.MRN", "CaTissue.MRN", "Label")
+
+
+mismatchMRN <- rbind.fill(subset(PlasmaMRNs, PlasmaMRNs$DADOS.MRN != PlasmaMRNs$CaTissue.MRN),
+                          subset(SFMRNs, SFMRNs$DADOS.MRN != SFMRNs$CaTissue.MRN))
+#write.csv(mismatchMRN, file="processed_data/mismatchMRNs.csv", row.names=F, na="")
+
+#### make corrections ######
+### plasma
+# 244 knee: 1276485 --> 244-hip
+PL$Joint[PL$ID==244 & PL$Joint=="Knee" & PL$MRN==1276485] <- "Hip"
+
+# 388 knee: 167915 --> 388-hip
+PL$Joint[PL$ID==388 & PL$Joint=="Knee" & PL$MRN==167915] <- "Hip"
+
+# 41 spine: 4217918 --> not leap-OA
+PL$ID[PL$ID==41 & PL$Joint=="Spine" & PL$MRN==4217918] <- NA
+
+# 53 spine: 4064458 --> not leap-OA
+PL$ID[PL$ID==53 & PL$Joint=="Spine" & PL$MRN==4064458] <- NA
+
+### SF
+# 355 knee: 572647 --> should be 335-knee
+SF$ID[SF$ID==355 & SF$Joint=="Knee" & SF$MRN==572647] <- 335
+
 
 ##################### synovial fluid summary ########################
 # create protease inhibitor indicator
@@ -64,12 +98,14 @@ SF$ProtInhib <- ifelse(grepl("roteas", SF$Comment), 1, 0)
 
 # summary data
 SF_ind <- ddply(SF, .(ID, Joint), summarize,
-                NAliquot = sum(Available>0),
-                NInhib = sum(ProtInhib==1),
-                Volumes = paste(paste(table(Available), paste0(names(table(Available)), "mL"), sep=": "), collapse="; "),
-                Biohazard = head(Biohazard, 1))
+                SF.Date = head(Collection.Date,1),
+                SF.Aliquot = sum(Available>0),
+                SF.Clean = sum(ProtInhib==0),
+                SF.Volumes = paste(paste(table(Available), paste0(names(table(Available)), "mL"), sep=": "), collapse="; "),
+                SF.Biohazard = head(Biohazard, 1))
 
 ##################### plasma summary ###########################
+
 # create protease inhibitor indicator
 PL$ProtInhib <- ifelse(grepl("roteas", PL$Comment), 1, 0)
 
@@ -84,8 +120,28 @@ PL$Clinical.Status[grepl("[^non][ |\\-]fasting", PL$Comment)] <- "Fasting"
 PL_excl <- subset(PL, PL$Hemolyzed != 1 & is.na(PL$ThawDate))
 
 PL_ind <- ddply(PL_excl, .(ID, Joint, Timepoint), summarize,
-                NAliquot = sum(Available>0),
-                NInhib = sum(ProtInhib==1),
-                Fasting = sum(Clinical.Status=="Fasting"),
+                Date = head(Collection.Date,1),
+                Aliquot = sum(Available>0),
+                Clean = sum(ProtInhib==0),
+                Status = head(names(table(Clinical.Status))[which.max(table(Clinical.Status))]),
                 Volumes = paste(paste(table(Available), paste0(names(table(Available)), "mL"), sep=": "), collapse="; "),
                 Biohazard = head(Biohazard, 1))
+
+# change timepoint labels
+PL_ind$Timepoint[PL_ind$Timepoint=="Pre-Surgery"] <- 1
+PL_ind$Timepoint[PL_ind$Timepoint=="6 week Follow-up"] <- 2
+PL_ind$Timepoint[PL_ind$Timepoint=="3 month Follow-up"] <- 3
+PL_ind$Timepoint[PL_ind$Timepoint=="6 month Follow-up"] <- 4
+PL_ind$Timepoint[PL_ind$Timepoint=="1 year Follow-up"] <- 5
+
+PL_ind <- PL_ind[order(PL_ind$Timepoint),]
+
+# reshape wide
+PL_ind_wide <- reshape(PL_ind, timevar="Timepoint", idvar=c("ID", "Joint"), sep=".", direction="wide")
+
+
+
+####### merge together survey and biobank data ############
+
+bio_ind <- merge(SF_ind, PL_ind_wide, by=c("ID", "Joint"), all.x=T, all.y=T)
+LEAPOA_ind <- merge()

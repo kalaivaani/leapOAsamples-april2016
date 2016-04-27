@@ -51,5 +51,4 @@ TKR_PL_Q_1Y <- read.csv("raw_data/TKR_PL_QUAL_1Y_20160425.csv", stringsAsFactors
 
 ## SDF ##
 # plasma
-SDF_PL <- read.csv("raw_data/SDF_PL_20160422.csv", stringsAsFactors=FALSE)
-SDF_PL_Q <- read.csv("raw_data/SDF_PL_QUAL_20160425.csv", stringsAsFactors=FALSE)
+SDF_PL <- read.csv("raw_data/SDF_PL_20160427.csv", stringsAsFactors=FALSE)
