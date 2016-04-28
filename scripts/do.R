@@ -26,3 +26,6 @@ source("scripts/load2.R")
 
 #### clean.R: clean data, subset and derive variables ####
 source("scripts/clean.R")
+
+#### analysis.R: generate metrics ####
+source("scripts/analysis.R")
